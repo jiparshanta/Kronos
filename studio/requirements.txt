@@ -1,0 +1,11 @@
+# Kronos model
+torch>=2.0.0
+numpy
+pandas
+einops
+huggingface_hub
+safetensors
+# Studio UI
+flask>=2.3
+# Optional: "Market" tab (Yahoo Finance download)
+yfinance

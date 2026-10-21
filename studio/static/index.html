@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kronos Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="/static/vendor/plotly.min.js"></script>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true">
+      <rect x="5" y="10" width="4" height="12" rx="1" fill="var(--up)"/><line x1="7" y1="6" x2="7" y2="26" stroke="var(--up)" stroke-width="1.5"/>
+      <rect x="14" y="6" width="4" height="10" rx="1" fill="var(--down)"/><line x1="16" y1="3" x2="16" y2="20" stroke="var(--down)" stroke-width="1.5"/>
+      <rect x="23" y="12" width="4" height="12" rx="1" fill="var(--accent)" opacity=".9"/><line x1="25" y1="8" x2="25" y2="28" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="2 2"/>
+    </svg>
+    <div>
+      <div class="brand-name">Kronos Studio</div>
+      <div class="brand-sub">Foundation-model forecasting for K-lines</div>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <span id="modelPill" class="pill"><span class="dot"></span><span id="modelPillText">No model loaded</span></span>
+    <button id="themeBtn" class="icon-btn" title="Toggle theme" aria-label="Toggle theme">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+    </button>
+  </div>
+</header>
+
+<div class="layout">
+  <!-- ============================== SIDEBAR -->
+  <aside class="sidebar">
+    <section class="card">
+      <div class="card-title"><span class="step">1</span>Data</div>
+      <div class="tabs" role="tablist">
+        <button class="tab active" data-tab="sample">Sample</button>
+        <button class="tab" data-tab="upload">Upload</button>
+        <button class="tab" data-tab="market">Market</button>
+      </div>
+      <div class="tab-panel" data-panel="sample">
+        <select id="sampleSelect"></select>
+        <button id="sampleBtn" class="btn secondary full">Load sample</button>
+      </div>
+      <div class="tab-panel hidden" data-panel="upload">
+        <label id="drop" class="drop">
+          <input id="fileInput" type="file" accept=".csv,.txt,.feather,.ftr,.parquet" hidden>
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 16V4m0 0-4 4m4-4 4 4M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>
+          <span><b>Drop a CSV</b> or click to browse</span>
+          <small>Columns: timestamp, open, high, low, close [, volume, amount]</small>
+        </label>
+      </div>
+      <div class="tab-panel hidden" data-panel="market">
+        <input id="symbol" placeholder="Ticker e.g. AAPL, BTC-USD, EURUSD=X" autocomplete="off">
+        <div class="row2">
+          <select id="interval">
+            <option value="1d" selected>1 day</option><option value="1h">1 hour</option>
+            <option value="30m">30 min</option><option value="15m">15 min</option>
+            <option value="5m">5 min</option><option value="1wk">1 week</option>
+          </select>
+          <select id="period">
+            <option value="5d">5 days</option><option value="1mo">1 month</option><option value="3mo">3 months</option>
+            <option value="1y">1 year</option><option value="2y" selected>2 years</option><option value="5y">5 years</option><option value="max">Max</option>
+          </select>
+        </div>
+        <button id="marketBtn" class="btn secondary full">Fetch from Yahoo Finance</button>
+        <small class="muted">Intraday intervals are limited by Yahoo (e.g. 5m ≤ 60 days).</small>
+      </div>
+      <div id="dsInfo" class="ds-info hidden"></div>
+    </section>
+
+    <section class="card">
+      <div class="card-title"><span class="step">2</span>Model</div>
+      <div id="modelList" class="model-list"></div>
+      <div class="row2 align">
+        <label class="lbl">Device</label>
+        <select id="device"></select>
+      </div>
+      <button id="loadModelBtn" class="btn secondary full">Load model</button>
+    </section>
+
+    <section class="card">
+      <div class="card-title"><span class="step">3</span>Forecast</div>
+      <div class="seg" id="modeSeg">
+        <button data-mode="future" class="active">Predict future</button>
+        <button data-mode="backtest">Backtest</button>
+      </div>
+      <div class="field">
+        <div class="field-head"><label for="lookback">Lookback (context)</label><output id="lookbackOut"></output></div>
+        <input type="range" id="lookback" min="32" max="512" step="8" value="400">
+      </div>
+      <div class="field">
+        <div class="field-head"><label for="predLen">Horizon (bars)</label><output id="predLenOut"></output></div>
+        <input type="range" id="predLen" min="1" max="240" step="1" value="60">
+      </div>
+      <div class="field backtest-only hidden">
+        <div class="field-head"><label for="endIdx">Forecast origin</label><output id="endIdxOut"></output></div>
+        <input type="range" id="endIdx" min="0" max="1" step="1" value="1">
+      </div>
+      <details class="adv">
+        <summary>Sampling options</summary>
+        <div class="field">
+          <div class="field-head"><label for="samples">Sample paths</label><output id="samplesOut"></output></div>
+          <input type="range" id="samples" min="1" max="32" step="1" value="5">
+        </div>
+        <div class="field">
+          <div class="field-head"><label for="temp">Temperature</label><output id="tempOut"></output></div>
+          <input type="range" id="temp" min="0.1" max="2" step="0.05" value="1">
+        </div>
+        <div class="field">
+          <div class="field-head"><label for="topP">Top-p</label><output id="topPOut"></output></div>
+          <input type="range" id="topP" min="0.1" max="1" step="0.01" value="0.9">
+        </div>
+        <div class="row2">
+          <div><label class="lbl" for="topK">Top-k (0 = off)</label><input id="topK" type="number" min="0" value="0"></div>
+          <div><label class="lbl" for="seed">Seed</label><input id="seed" type="number" placeholder="random"></div>
+        </div>
+      </details>
+      <button id="runBtn" class="btn primary full" disabled>
+        <span class="btn-label">Run forecast</span>
+      </button>
+      <div id="runHint" class="muted small center">Load a dataset to begin</div>
+    </section>
+  </aside>
+
+  <!-- ============================== MAIN -->
+  <main class="main">
+    <div class="stats" id="stats">
+      <div class="stat"><div class="stat-k">Last close</div><div class="stat-v" id="sLast">—</div><div class="stat-s" id="sLastSub">&nbsp;</div></div>
+      <div class="stat"><div class="stat-k">Forecast close</div><div class="stat-v" id="sPred">—</div><div class="stat-s" id="sPredSub">&nbsp;</div></div>
+      <div class="stat"><div class="stat-k">Expected change</div><div class="stat-v" id="sChg">—</div><div class="stat-s" id="sChgSub">&nbsp;</div></div>
+      <div class="stat"><div class="stat-k">P(close ↑)</div><div class="stat-v" id="sProb">—</div><div class="meter"><span id="sProbBar"></span></div></div>
+      <div class="stat"><div class="stat-k">Forecast range</div><div class="stat-v small-v" id="sRange">—</div><div class="stat-s" id="sRangeSub">&nbsp;</div></div>
+    </div>
+
+    <section class="card chart-card">
+      <div class="chart-head">
+        <div>
+          <div class="chart-title" id="chartTitle">Price</div>
+          <div class="muted small" id="chartSub">Load data to see the chart</div>
+        </div>
+        <div class="toggles">
+          <label class="chk"><input type="checkbox" id="showBand" checked> 90% band</label>
+          <label class="chk"><input type="checkbox" id="showPaths"> Sample paths</label>
+          <label class="chk"><input type="checkbox" id="showCandles" checked> Forecast candles</label>
+          <label class="chk"><input type="checkbox" id="showVolume" checked> Volume</label>
+        </div>
+      </div>
+      <div id="chart" class="chart">
+        <div class="empty">
+          <svg viewBox="0 0 64 64" width="56" height="56" fill="none" stroke="currentColor" stroke-width="2" opacity=".5"><path d="M8 52h48M14 44V30m10 14V20m10 24V28m10 16V14m10 30V24"/></svg>
+          <div>Pick a sample, upload a CSV or fetch a ticker to get started.</div>
+        </div>
+      </div>
+      <div id="overlay" class="overlay hidden"><div class="spinner"></div><div id="overlayText">Working…</div></div>
+    </section>
+
+    <section id="metricsCard" class="card hidden">
+      <div class="card-title">Backtest accuracy <span class="muted small">— forecast vs. what actually happened</span></div>
+      <div class="metrics" id="metrics"></div>
+    </section>
+
+    <section id="tableCard" class="card hidden">
+      <div class="table-head">
+        <div class="card-title">Forecast table</div>
+        <button id="exportBtn" class="btn ghost">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 4v12m0 0 4-4m-4 4-4-4M4 20h16"/></svg>
+          Export CSV
+        </button>
+      </div>
+      <div class="table-wrap"><table id="fcTable"></table></div>
+    </section>
+
+    <footer class="foot muted small">
+      Kronos · <a href="https://github.com/shiyu-coder/Kronos" target="_blank" rel="noopener">GitHub</a> ·
+      <a href="https://arxiv.org/abs/2508.02739" target="_blank" rel="noopener">Paper</a> ·
+      Forecasts are probabilistic research output, not financial advice.
+    </footer>
+  </main>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>
